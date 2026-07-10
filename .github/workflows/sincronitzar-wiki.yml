@@ -7,56 +7,75 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      # 1. Descarrega la teva branca principal de text (main)
+      # 1. Descarrega la teva branca principal (main)
       - name: Checkout el meu repositori
         uses: actions/checkout@v4
         with:
           ref: main
 
-      # 2. Descarrega la NOVA wiki del repositori EAMT2026-Tutorial
+      # 2. Descarrega la wiki de la nova adreça d'EAMT2026
       - name: Checkout Wiki externa (EAMT2026)
         uses: actions/checkout@v4
         with:
           repository: mtuoc/EAMT2026-Tutorial.wiki
           path: wiki-temporal
 
-      # 3. Copia el contingut a la carpeta REAL de MkDocs (docs/module-1)
+      # 3. Copia els fitxers bruts .md a docs/module-1
       - name: Copiar fitxers a la carpeta de MkDocs
         run: |
           mkdir -p docs/module-1
           rsync -av --delete --exclude='.git' wiki-temporal/ docs/module-1/
           rm -rf wiki-temporal
 
-      # 4. SCRIPT EN BASH: Actualitza automàticament el fitxer mkdocs.yml
-      - name: Actualitzar el menú de mkdocs.yml
+      # 4. SCRIPT AUTOMÀTIC: Llegeix els fitxers i els injecta al mkdocs.yml
+      - name: Reconstruir menú al mkdocs.yml
+        shell: python
         run: |
-          echo "Generant llista de fitxers per al menú..."
-          
-          # Creem un fitxer temporal amb el contingut del mòdul formatat per a MkDocs
-          echo "    - 'Module 1. Deployment, Integration and Evaluation':" > menu_modul.txt
-          
-          # Busquem tots els .md de docs/module-1 (ordenats de forma alfabètica)
-          # i els afegim amb el format correcte de sagnat (6 espais per als submenús)
-          cd docs
-          for file in module-1/*.md; do
-            # Agafem el nom del fitxer sense l'extensió per fer-lo servir de títol bonic
-            filename=$(basename "$file" .md)
-            echo "      - '$filename': '$file'" >> ../menu_modul.txt
-          done
-          cd ..
+          import os
 
-          echo "Menú generat automàticament:"
-          cat menu_modul.txt
+          # 1. Busquem i ordenem tots els fitxers .md de la carpeta docs/module-1
+          folder = 'docs/module-1'
+          files = sorted([f for f in os.listdir(folder) if f.endswith('.md')])
+          
+          # 2. Generem les línies del submenú amb el format exacte (4 espais de sagnat)
+          menu_lines = []
+          for f in files:
+              title = os.path.splitext(f)[0].replace('-', ' ').title()
+              menu_lines.append(f"    - {title}: module-1/{f}\n")
+          
+          # 3. Llegim el mkdocs.yml actual
+          with open('mkdocs.yml', 'r', encoding='utf-8') as file:
+              lines = file.readlines()
+          
+          # 4. Trobem on estan les marques de control
+          try:
+              start_idx = lines.index("# INICI_WIKI_MODUL_1\n")
+              end_idx = lines.index("# FINAL_WIKI_MODUL_1\n")
+          except ValueError:
+              print("ERROR: No s'han trobat les marques # INICI_WIKI_MODUL_1 o # FINAL_WIKI_MODUL_1 al mkdocs.yml")
+              exit(1)
+          
+          # 5. Injectem el nou menú entre les dues marques
+          new_lines = lines[:start_idx + 1] + menu_lines + lines[end_idx:]
+          
+          # 6. Desem el fitxer actualitzat
+          with open('mkdocs.yml', 'w', encoding='utf-8') as file:
+              file.writelines(new_lines)
+          
+          print("El fitxer mkdocs.yml s'ha actualitzat automàticament amb els nous fitxers de la wiki!")
 
-      # 5. Puja els canvis a la branca main
+      # 5. Puja els canvis reals de tornada a la teva branca main
       - name: Commit i Push dels canvis
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
           git add docs/module-1/
+          git add mkdocs.yml
+          
           if ! git diff --cached --quiet; then
-            git commit -m "docs: sincronització automàtica de la nova wiki EAMT2026 a docs/module-1"
+            git commit -m "docs: actualització automàtica de fitxers i menú del Mòdul 1 des de la wiki"
             git push origin main
           else
-            echo "No s'ha detectat cap canvi nou."
+            echo "No hi ha canvis nous per pujar."
           fi
